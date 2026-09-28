@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "mm64.h"
 
 #define PAGE_SIZE   4096ULL

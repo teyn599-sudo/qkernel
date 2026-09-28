@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 /* demo64.c - 量子演算法可視化 */
 #include <stdint.h>
 #define QSHIFT 30

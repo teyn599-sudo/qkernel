@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 #ifndef MM64_H
 #define MM64_H
 #include <stdint.h>
