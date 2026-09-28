@@ -1,5 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later */
-// Dual-licensed: GPLv2 (for Linux kernel compatibility) OR GPLv3
+static void q_apply_fused_hxcnot(void);
 // ============================================================
 // G116 核心內量子計算機 v2 — 完整版
 // A: Q30.30 高精度定點數 (int64)
@@ -20,7 +19,7 @@
 #include <linux/random.h>
 
 #define N_QUBITS 28
-#define DIM      (1u << N_QUBITS)   /* 2^30 = 1,073,741,824 */
+#define DIM      (1ULL << N_QUBITS)   /* 2^30 = 1,073,741,824 */
 
 #define QSHIFT   30
 #define QONE     (1LL << QSHIFT)    /* 2^30 = 1073741824 */
@@ -133,6 +132,7 @@ struct qload_req {
 #define Q_GROVER_RUN    _IOWR('Q', 23, struct qgrover_req)
 #define Q_LOAD_BITS     _IOW('Q', 24, struct qload_bits_req)
 #define Q_GROVER_MATRIX _IOWR('Q', 25, struct qgrover_matrix_req)
+#define Q_APPLY_FUSED_HXCNOTH _IO('Q', 30)
 #define Q_QFT_RUN       _IOW('Q', 26, struct qqft_req)
 #define Q_GROVER_PATTERN _IOWR('Q', 27, struct qgpat_req)
 
@@ -243,7 +243,7 @@ static void q_apply_h_local(unsigned int q, unsigned int N)
     if (q >= 31) return;
     for (i = 0; i < N; i++) {
         if ((i & 127) == 0) {
-            __builtin_prefetch(&q_state[i + 256], 0, 3);
+            __builtin_prefetch(&q_state[i + 512], 0, 3);
             __builtin_prefetch(&q_state[i + 384], 0, 3);
         }
         if (i & mask) continue;
@@ -652,6 +652,10 @@ static void h_chunk(void *ctx, int chunk, int n_chunks)
         for (off = 0; off < mask; off++) {
             unsigned int i = base + off;
             unsigned int j = i | mask;
+            if ((off & 63) == 0) {
+                __builtin_prefetch(&q_state[i + 512], 0, 1);
+                __builtin_prefetch(&q_state[j + 512], 1, 1);
+            }
             int64_t ar = q_state[i].re, ai = q_state[i].im;
             int64_t br = q_state[j].re, bi = q_state[j].im;
             int64_t sr = ((int64_t)(ar + br)) * QINV_SQRT2;
@@ -978,6 +982,9 @@ static long q_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
         }
         break;
     }
+    case Q_APPLY_FUSED_HXCNOTH:
+        q_apply_fused_hxcnot();
+        return 0;
     case Q_QFT_RUN: {
         struct qqft_req r;
         if (copy_from_user(&r, (void __user *)arg, sizeof(r))) { ret=-EFAULT; break; }
@@ -1069,7 +1076,7 @@ static int __init g116_quantum_init(void)
     int ret;
     size_t sz = (size_t)DIM * sizeof(qcplx_t);
 
-    pr_info("g116_quantum: init N=%d DIM=%u %zu KB\n", N_QUBITS, DIM, sz/1024);
+    pr_info("g116_quantum: init N=%d DIM=%llu %zu KB\n", N_QUBITS, DIM, sz/1024);
 
     g_n_workers = num_online_cpus();
     if (g_n_workers > MAX_WORKERS) g_n_workers = MAX_WORKERS;
@@ -1118,3 +1125,27 @@ module_init(g116_quantum_init);
 module_exit(g116_quantum_exit);
 
 MODULE_LICENSE("GPL");
+static void q_apply_fused_hxcnot(void)
+{
+    const int64_t sq = 759250125LL;
+    const int64_t half = 1LL << (QSHIFT - 1);
+    uint64_t base;
+    for (base = 0; base < DIM; base += 4) {
+        if ((base & 255) == 0 && base + 512 < DIM) {
+            __builtin_prefetch(&q_state[base + 256], 1, 3);
+            __builtin_prefetch(&q_state[base + 384], 1, 3);
+        }
+        int64_t r0 = q_state[base+0].re, i0 = q_state[base+0].im;
+        int64_t r1 = q_state[base+1].re, i1 = q_state[base+1].im;
+        int64_t r2 = q_state[base+2].re, i2 = q_state[base+2].im;
+        int64_t r3 = q_state[base+3].re, i3 = q_state[base+3].im;
+        q_state[base+0].re = (int32_t)((sq * (r1 - r3) + half) >> QSHIFT);
+        q_state[base+0].im = (int32_t)((sq * (i1 - i3) + half) >> QSHIFT);
+        q_state[base+1].re = (int32_t)((sq * (r0 + r2) + half) >> QSHIFT);
+        q_state[base+1].im = (int32_t)((sq * (i0 + i2) + half) >> QSHIFT);
+        q_state[base+2].re = (int32_t)((sq * (r1 + r3) + half) >> QSHIFT);
+        q_state[base+2].im = (int32_t)((sq * (i1 + i3) + half) >> QSHIFT);
+        q_state[base+3].re = (int32_t)((sq * (r0 - r2) + half) >> QSHIFT);
+        q_state[base+3].im = (int32_t)((sq * (i0 - i2) + half) >> QSHIFT);
+    }
+}
