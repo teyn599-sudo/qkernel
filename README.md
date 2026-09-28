@@ -46,3 +46,12 @@ QKernel is released under the **GNU General Public License v3.0 (GPLv3)**. See t
 For commercial use that cannot comply with GPLv3 — for example, proprietary redistribution or embedding in closed-source products — a separate commercial license is available.
 
 Contact: teyn599@gmail.com
+
+## Licensing Note
+
+The repository as a whole is licensed under GPLv3 (see `LICENSE`).
+
+The Linux kernel module (`src/g116_quantum.c`) is additionally available
+under GPLv2 for compatibility with the Linux kernel, which requires
+`MODULE_LICENSE("GPL")` (meaning "GPLv2 or later"). This dual-licensing
+ensures the module loads without tainting the kernel.

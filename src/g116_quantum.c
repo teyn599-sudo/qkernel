@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+// Dual-licensed: GPLv2 (for Linux kernel compatibility) OR GPLv3
 // ============================================================
 // G116 核心內量子計算機 v2 — 完整版
 // A: Q30.30 高精度定點數 (int64)
@@ -1116,4 +1117,4 @@ static void __exit g116_quantum_exit(void)
 module_init(g116_quantum_init);
 module_exit(g116_quantum_exit);
 
-MODULE_LICENSE("GPL v3");
+MODULE_LICENSE("GPL");
