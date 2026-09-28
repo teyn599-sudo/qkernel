@@ -2,7 +2,7 @@
 #include "mm64.h"
 
 #define PAGE_SIZE   4096ULL
-#define MAX_PAGES   (1ULL << 22)          /* 16 GB  */
+#define MAX_PAGES   (1ULL << 22)          /* 16 GB 上限 */
 static uint8_t  g_bm[MAX_PAGES / 8];
 static uint64_t g_pmm_base, g_pmm_pages, g_pmm_last;
 
@@ -15,7 +15,7 @@ void pmm_init(void){
     g_pmm_pages = g_low_size / PAGE_SIZE;
     if (g_pmm_pages > MAX_PAGES) g_pmm_pages = MAX_PAGES;
     for (uint64_t i = 0; i < sizeof(g_bm); i++) g_bm[i] = 0xFF;
-    /*  16 MB  kernel */
+    /* 前 16 MB 保留給 kernel */
     uint64_t start = (16ULL << 20) / PAGE_SIZE;
     if (start > g_pmm_pages) start = g_pmm_pages;
     for (uint64_t i = start; i < g_pmm_pages; i++) bm_c(i);
@@ -49,7 +49,7 @@ uint64_t pmm_free_pages(void){
 
 uint64_t pmm_total_pages(void){ return g_pmm_pages; }
 
-/* ---- kmalloc16  size class16B ~ 512KB---- */
+/* ---- kmalloc：16 個 size class（16B ~ 512KB）---- */
 #define KM_CLASSES  16
 #define KM_MAGIC    0xCAFEBABEu
 struct km_hdr { uint32_t cls; uint32_t magic; };

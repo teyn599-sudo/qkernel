@@ -1,10 +1,10 @@
 static void q_apply_fused_hxcnot(void);
 // ============================================================
-// G116  v2 —
-// A: Q30.30  (int64)
-// B: X, Y, Z, T, S, Toffoli
-// C:  ()
-// D:  systemd
+// G116 核心內量子計算機 v2 — 完整版
+// A: Q30.30 高精度定點數 (int64)
+// B: X, Y, Z, T, S, Toffoli 閘
+// C: 部分跡 (約化密度矩陣輸出)
+// D: 支援 systemd 自動載入
 // ============================================================
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -32,7 +32,7 @@ typedef struct {
 
 static qcplx_t *q_state = NULL;
 
-/* ══════ workqueue ══════ */
+/* ══════ 並行框架：workqueue ══════ */
 #define MAX_WORKERS 16
 
 struct parallel_work {
@@ -103,7 +103,7 @@ static struct class *q_class = NULL;
 static struct device *q_device = NULL;
 static const char *DEV_NAME = "g116_quantum";
 
-/* ── ioctl  ────────────────────────────────── */
+/* ── ioctl 命令 ────────────────────────────────── */
 #define Q_INIT_ZERO     _IO('Q', 1)
 #define Q_APPLY_H_ALL   _IO('Q', 2)
 #define Q_APPLY_H_Q     _IOW('Q', 3, unsigned int)
@@ -147,8 +147,8 @@ struct qload_bits_req {
 };
 struct qgpat_req {
     unsigned int n_qubits;
-    unsigned int pattern;      /*  bit pattern */
-    unsigned int pattern_bits; /* pattern  bit */
+    unsigned int pattern;      /* 要找的 bit pattern */
+    unsigned int pattern_bits; /* pattern 佔幾個 bit */
     unsigned int iterations;
     const unsigned char *data;
     int          result;
@@ -189,12 +189,12 @@ struct qinfo_req {
 };
 
 struct qpt_req {
-    unsigned int n_keep;    /*  n_keep  qubit */
-    unsigned int matrix_dim;/* 2^n_keep */
-    int64_t *rho_out;       /*  (matrix_dim² × 16 bytes) */
+    unsigned int n_keep;    /* 保留前 n_keep 個 qubit */
+    unsigned int matrix_dim;/* 2^n_keep，呼叫方需設定 */
+    int64_t *rho_out;       /* 使用者提供的緩衝區 (matrix_dim² × 16 bytes) */
 };
 
-/* ──  ───────────────────────────────────── */
+/* ── 初始化 ───────────────────────────────────── */
 static u64 isqrt64(u64 n)
 {
     u64 x, y;
@@ -207,7 +207,7 @@ static u64 isqrt64(u64 n)
 static void q_apply_h(unsigned int q);
 static void q_apply_cnot(unsigned int ctrl, unsigned int tgt);
 
-/* ── : ctrl=1  tgt  e^(i·2π/2^k) ── */
+/* ── 受控相位門: ctrl=1 時對 tgt 施加相位 e^(i·2π/2^k) ── */
 static void q_apply_cphase(unsigned int ctrl, unsigned int tgt, unsigned int k)
 {
     static const int64_t COS_TAB[8] = {
@@ -234,8 +234,8 @@ static void q_apply_cphase(unsigned int ctrl, unsigned int tgt, unsigned int k)
     }
 }
 
-/* ── QFT: n qubits  ── */
-/* ──  H  N  ── */
+/* ── QFT: n qubits 上的量子傅立葉變換 ── */
+/* ── 局部 H 閘：只作用於前 N 個振幅 ── */
 static void q_apply_h_local(unsigned int q, unsigned int N)
 {
     unsigned int mask = 1u << q;
@@ -261,7 +261,7 @@ static void q_apply_h_local(unsigned int q, unsigned int N)
     }
 }
 
-/* ──  CNOT N  ── */
+/* ── 局部 CNOT：只作用於前 N 個振幅 ── */
 static void q_apply_cnot_local(unsigned int ctrl, unsigned int tgt, unsigned int N)
 {
     unsigned int cmask = 1u << ctrl, tmask = 1u << tgt;
@@ -276,7 +276,7 @@ static void q_apply_cnot_local(unsigned int ctrl, unsigned int tgt, unsigned int
     }
 }
 
-/* ──  CPhase N  ── */
+/* ── 局部 CPhase：只作用於前 N 個振幅 ── */
 static void q_apply_cphase_local(unsigned int ctrl, unsigned int tgt, unsigned int k, unsigned int N)
 {
     static const int64_t COS_TAB[8] = {
@@ -325,7 +325,7 @@ static int q_qft_run(unsigned int n)
 
 
 
-/* ──  Grover:  n bit  1  ── */
+/* ── 矩陣 Grover: 在 n bit 中找所有 1 的位置 ── */
 static int q_grover_matrix(unsigned int n_qubits,
                            unsigned int *inout_iterations,
                            const unsigned char __user *data,
@@ -364,10 +364,10 @@ static int q_grover_matrix(unsigned int n_qubits,
         for (j = 0; j < N; j++) {
             buf = NULL;
         }
-        /*  vmalloc buf q_state */
+        /* 這裡直接在記憶體上做（不能再 vmalloc buf，用 q_state 判斷已無原始資料）*/
         break;
     }
-    /* Oracle  bit */
+    /* Oracle 需要原始 bit，直接重新讀 */
     buf = (unsigned char *)vmalloc(n_bytes);
     if (!buf) return -ENOMEM;
     if (copy_from_user(buf, data, n_bytes)) { vfree(buf); return -EFAULT; }
@@ -394,7 +394,7 @@ static int q_grover_matrix(unsigned int n_qubits,
     return 0;
 }
 
-/* ── Grover:  n bit  pattern  ── */
+/* ── Grover: 在 n bit 中找符合 pattern 的位置 ── */
 static int q_grover_pattern(unsigned int n_qubits,
                             unsigned int pattern, unsigned int pbits,
                             unsigned int *inout_iterations,
@@ -415,7 +415,7 @@ static int q_grover_pattern(unsigned int n_qubits,
     buf = (unsigned char *)vmalloc(n_bytes);
     if (!buf) return -ENOMEM;
     if (copy_from_user(buf, data, n_bytes)) { vfree(buf); return -EFAULT; }
-    /*  marked */
+    /* 統計 marked */
     for (i = 0; i + pbits <= N; i++) {
         unsigned int v = 0;
         unsigned int b;
@@ -632,7 +632,7 @@ static void q_init_zero(void)
 }
 
 
-/* ── H workqueue  ── */
+/* ── H 閘（workqueue 版） ── */
 struct h_ctx { unsigned int q; };
 
 static void h_chunk(void *ctx, int chunk, int n_chunks)
@@ -693,7 +693,7 @@ static void q_apply_h_all(void)
 }
 
 
-/* ──  ── */
+/* ── 快速設均勻疊加態 ── */
 static void q_set_uniform(void)
 {
     unsigned int i;
@@ -720,7 +720,7 @@ static void q_apply_cnot(unsigned int ctrl, unsigned int tgt)
     }
 }
 
-/* ── X  (bit flip) ────────────────────────────── */
+/* ── X 閘 (bit flip) ────────────────────────────── */
 static void q_apply_x(unsigned int q)
 {
     unsigned int i, mask = 1u << q;
@@ -734,7 +734,7 @@ static void q_apply_x(unsigned int q)
     }
 }
 
-/* ── Y  (bit+phase flip) ──────────────────────── */
+/* ── Y 閘 (bit+phase flip) ──────────────────────── */
 static void q_apply_y(unsigned int q)
 {
     unsigned int i, mask = 1u << q;
@@ -754,7 +754,7 @@ static void q_apply_y(unsigned int q)
 }
 
 
-/* ── Z workqueue  ── */
+/* ── Z 閘（workqueue 版） ── */
 struct z_ctx { unsigned int q; };
 
 static void z_chunk(void *ctx, int chunk, int n_chunks)
@@ -793,12 +793,12 @@ static void q_apply_s(unsigned int q)
     }
 }
 
-/* ── T  (π/8 ) ────────────────────────────── */
+/* ── T 閘 (π/8 相位) ────────────────────────────── */
 static void q_apply_t(unsigned int q)
 {
     unsigned int i, mask = 1u << q;
     if (q >= N_QUBITS) return;
-    /* T  cos45+sin45i = (1+i)/√2 */
+    /* T 需要 cos45+sin45i = (1+i)/√2 */
     for (i = 0; i < DIM; i++) {
         if (!(i & mask)) continue;
         int64_t re = q_state[i].re, im = q_state[i].im;
@@ -827,7 +827,7 @@ static void q_apply_toffoli(unsigned int c1, unsigned int c2, unsigned int tgt)
     }
 }
 
-/* ── norm² () ───────────────────────────────── */
+/* ── norm² (整數) ───────────────────────────────── */
 static int64_t q_norm_sq_q30(void)
 {
     unsigned int i;
@@ -840,7 +840,7 @@ static int64_t q_norm_sq_q30(void)
     return s;
 }
 
-/* ──  NB  qubit  NA  ──── */
+/* ── 部分跡：把後 NB 個 qubit 跡掉，留前 NA 個 ──── */
 static int q_partial_trace(unsigned int NA, int64_t __user *out)
 {
     unsigned int NB, DA, DB, i, j, k;
@@ -867,7 +867,7 @@ static int q_partial_trace(unsigned int NA, int64_t __user *out)
                 s_re += ((__int128)ar * br + (__int128)ai * bi);
                 s_im += ((__int128)ai * br - (__int128)ar * bi);
             }
-            /*  Q60.60  Q30.30 */
+            /* 從 Q60.60 降到 Q30.30 */
             rho[(i * DA + j) * 2 + 0] = (int64_t)(s_re >> QSHIFT);
             rho[(i * DA + j) * 2 + 1] = (int64_t)(s_im >> QSHIFT);
         }
@@ -1049,7 +1049,7 @@ static long q_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
             q_state[r.offset + i].im = im_buf[i];
         }
         vfree(re_buf); vfree(im_buf);
-        pr_info("g116_quantum:  %u  (offset=%u)\n", r.count, r.offset);
+        pr_info("g116_quantum: 載入 %u 個狀態 (offset=%u)\n", r.count, r.offset);
         break;
     }
     default:

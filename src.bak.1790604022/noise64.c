@@ -19,10 +19,10 @@ uint32_t noise_u32(void){
 }
 int64_t noise_q30(void){ return (int64_t)(noise_u32() >> 2); }
 
-/* ----  kernel64.c ---- */
+/* ---- 外部量子態（在 kernel64.c 定義）---- */
 extern int32_t *g_qstate;
 
-/* ---- T1 + T2  ---- */
+/* ---- T1 + T2 雜訊 ---- */
 void noise_qubit(int nq, int q, int64_t decay_amp, int64_t p_phase){
     int32_t *st = g_qstate;
     uint64_t dim = 1ULL << nq;
@@ -39,16 +39,16 @@ void noise_qubit(int nq, int q, int64_t decay_amp, int64_t p_phase){
     }
 }
 
-/* ----  ---- */
+/* ---- 閘錯誤 ---- */
 void noise_gate_error(int nq, int q, int64_t p){
     if (noise_q30() >= p) return;
     int32_t *st = g_qstate;
     uint64_t dim = 1ULL << nq;
     uint64_t mask = 1ULL << q;
-    /*  X Z */
+    /* 一半機率 X，一半機率 Z */
     int use_x = (noise_u32() & 1);
     if (use_x){
-        /* X |0>  |1>  */
+        /* X：交換 |0> 和 |1> 振幅 */
         for (uint64_t k = 0; k < dim; k++){
             if ((k & mask) == 0){
                 uint64_t k2 = k | mask;
@@ -58,13 +58,13 @@ void noise_gate_error(int nq, int q, int64_t p){
             }
         }
     } else {
-        /* Z|1>  */
+        /* Z：|1> 振幅變號 */
         for (uint64_t k = 0; k < dim; k++)
             if (k & mask){ st[k*2] = -st[k*2]; st[k*2+1] = -st[k*2+1]; }
     }
 }
 
-/* ----  F = |⟨a|b⟩|² ---- */
+/* ---- 保真度 F = |⟨a|b⟩|² ---- */
 int64_t state_fidelity(int nq, const int64_t *a, const int64_t *b){
     uint64_t dim = 1ULL << nq;
     int64_t sr = 0, si = 0;

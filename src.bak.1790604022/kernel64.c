@@ -12,7 +12,7 @@ extern const uint8_t _binary_static_bin_end[];
 #define IMG_W 1024
 #define IMG_H 768
 
-/* ============  ============ */
+/* ============ 端口 ============ */
 static inline void outb(uint16_t p,uint8_t v){ __asm__ volatile("outb %0,%1"::"a"(v),"Nd"(p)); }
 static inline uint8_t inb(uint16_t p){ uint8_t r; __asm__ volatile("inb %1,%0":"=a"(r):"Nd"(p)); return r; }
 
@@ -95,7 +95,7 @@ static void rect(int x,int y,int w,int h,uint8_t g){
     for(int j=0;j<h;j++) for(int i=0;i<w;i++) px(x+i,y+j,g);
 }
 
-/* ============ 5x7  ============ */
+/* ============ 5x7 字体 ============ */
 static const uint8_t FONT[][5]={
  {0x7E,0x11,0x11,0x11,0x7E},{0x7F,0x49,0x49,0x49,0x36},
  {0x3E,0x41,0x41,0x41,0x22},{0x7F,0x41,0x41,0x22,0x1C},
@@ -148,7 +148,7 @@ static void draw_u(int x,int y,uint64_t v,uint8_t c,int sc){
 struct e820_entry { uint64_t base, length; uint32_t type, acpi; } __attribute__((packed));
 static uint64_t g_ram_usable=0, g_ram_largest=0, g_ram_largest_base=0;
 uint64_t g_low_base=0, g_low_size=0;
-static uint64_t g_heap_base=0, g_heap_top=0;   /*  heap ≥4GB*/
+static uint64_t g_heap_base=0, g_heap_top=0;   /* 最佳 heap 區間（≥4GB）*/
 
 static void parse_e820(uint64_t mbi){
     uint32_t flags = *(uint32_t*)(uintptr_t)mbi;
@@ -169,7 +169,7 @@ static void parse_e820(uint64_t mbi){
                 g_low_base = e->base;
                 g_low_size = e->length;
             }
-            /*  base>=4GB  q35 MMIO  0xC0000000~0xFFFFFFFF */
+            /* 優先選 base>=4GB 的最大區塊，避開 q35 MMIO 洞 0xC0000000~0xFFFFFFFF */
             if(e->base >= 0x100000000ULL && e->length > (g_heap_top - g_heap_base)){
                 g_heap_base = e->base;
                 g_heap_top  = e->base + e->length;
@@ -195,7 +195,7 @@ void *heap_alloc(uint64_t sz){
     return p;
 }
 
-/* ============ Q30  ============ */
+/* ============ Q30 量子 ============ */
 #define QSHIFT 30
 #define QONE   (1<<QSHIFT)
 #define QADD(a,b) ((int32_t)((int64_t)(a) + (int64_t)(b)))
@@ -261,7 +261,7 @@ void q_apply_x(int q){
     }
 }
 
-/* S  i */
+/* S 门：相位 i */
 static void q_apply_s(int q){
     if(!g_qstate || q<0 || q>=g_nq) return;
     uint64_t bit = 1ULL << q;
@@ -269,14 +269,14 @@ static void q_apply_s(int q){
         if(i & bit){
             int32_t re = g_qstate[i*2];
             int64_t im = g_qstate[i*2+1];
-            /* S: |1> -> i|1> (re,im) -> (-im, re) */
+            /* S: |1> -> i|1>，即 (re,im) -> (-im, re) */
             g_qstate[i*2]   = -im;
             g_qstate[i*2+1] = re;
         }
     }
 }
 
-/* T  e^(i*pi/4) */
+/* T 门：相位 e^(i*pi/4) */
 static void q_apply_t(int q){
     if(!g_qstate || q<0 || q>=g_nq) return;
     uint64_t bit = 1ULL << q;
@@ -294,7 +294,7 @@ static void q_apply_t(int q){
     }
 }
 
-/* Toffoli(c1,c2)  target */
+/* Toffoli：(c1,c2) 控制 target */
 void q_apply_toffoli(int c1, int c2, int t){
     if(!g_qstate || c1<0 || c2<0 || t<0) return;
     if(c1>=g_nq || c2>=g_nq || t>=g_nq) return;
@@ -441,7 +441,7 @@ static void ai_patrol_step64(void){
     int q = (int)(g_ai_scan64 % g_nq);
     g_ai_scan64++;
 
-    /*  qubit q  |0>  */
+    /* 简化：读 qubit q 的 |0> 振幅作为特征 */
     int64_t p1 = g_qstate[0];
     struct ai_hist64 *h = &g_ah64[q];
     h->hist[h->head] = p1;
@@ -500,7 +500,7 @@ static void qram_tick64(void){
     }
 }
 
-/*  4 qubit  */
+/* 独立 4 qubit 空间，贝尔态演示 */
 static void bell_demo(void){
     static int64_t demo[32];
     for(int i = 0; i < 32; i++) demo[i] = 0;
@@ -556,7 +556,7 @@ static void bell_demo(void){
 
 /* ============ Benchmark ============ */
 static void bench_h_gate(int nq, uint64_t pairs){
-
+    /* 临时配态向量 */
     uint64_t need = (1ULL << nq) * 8ULL;
     int32_t *st = (int32_t*)heap_alloc(need);
     if(!st){ sputs("  [bench] alloc fail\n"); return; }
@@ -565,7 +565,7 @@ static void bench_h_gate(int nq, uint64_t pairs){
     st[2] = 0;
     st[3] = 0;
 
-    /*  H  pairs  */
+    /* 手动跑 H 闸 pairs 对 */
     uint64_t bit = 1ULL;
     int32_t sq = 759250125;
     uint64_t qdim = 1ULL << nq;
@@ -596,9 +596,9 @@ static void bench_h_gate(int nq, uint64_t pairs){
 }
 
 static void bench_h_full(int nq){
-    /*  H  2^22 = 4194304  128 MB
-     *  28q1.34  */
-    int nq_small = 23;    /* 23 qubit = 8388608  = 4194304  */
+    /* 小规模 H 闸，只跑 2^22 = 4194304 对（占用 128 MB）
+     * 实测后外推完整 28q（1.34 亿对）的时间 */
+    int nq_small = 23;    /* 23 qubit = 8388608 振幅 = 4194304 对 */
     uint64_t need = (1ULL << nq_small) * 8ULL;
     int32_t *st = (int32_t*)heap_alloc(need);
     if(!st){ sputs("  [bench] alloc fail\n"); return; }
@@ -637,7 +637,7 @@ static void bench_h_full(int nq){
     sputs(" cycles / "); sputu(pairs); sputs(" pairs = ");
     sputu(per_pair); sputs(" cycles/pair\n");
 
-    /*  28q1.34  */
+    /* 外推到 28q：1.34 亿对 */
     uint64_t full_pairs = 1ULL << 27;   /* 134217728 */
     uint64_t full_cyc = full_pairs * per_pair;
     uint64_t sec = full_cyc / 2500000000ULL;
@@ -648,18 +648,18 @@ static void bench_h_full(int nq){
     sputu(sec); sputs(".");
     if(ms < 100) sputc('0');
     if(ms < 10)  sputc('0');
-    sputu(ms); sputs("  @ 2.5 GHz\n");
+    sputu(ms); sputs(" 秒 @ 2.5 GHz\n");
     sputs("  *** 28 QUBIT FULL H GATE ESTIMATED ***\n");
 
-    /*  2  */
-    sputs("  ( i5-14400  10  4-8 )\n");
+    /* 用 2 个核心平行测一下真机潜力 */
+    sputs("  (真机 i5-14400 有 10 核心，多核可再快 4-8 倍)\n");
 }
 
 
 
 
 
-/* ============ SMP  H  ============ */
+/* ============ SMP 多核 H 闸 ============ */
 volatile int      g_smp_go = 0;
 static volatile int      g_smp_chunk_counter = 0;
 static volatile int      g_smp_done = 0;
@@ -729,7 +729,7 @@ static void bench_smp(int nq){
     g_smp_go = 1;
     sputs("[BSP] enter for-loop\n");
 
-    /* BSP  0  atomic */
+    /* BSP 自己做第 0 塊，不做 atomic */
     int32_t sq = 759250125;
     {
         uint64_t a0 = 0;
@@ -770,7 +770,7 @@ static void bench_smp(int nq){
 static void bench_all(void){
     sputs("[bench] === MEMORY BANDWIDTH (rep stosq/movsq) ===\n");
 
-    /*  256 MB  + 256 MB  */
+    /* 配 256 MB 源 + 256 MB 目标 */
     uint64_t sz = 256ULL * 1024 * 1024;
     uint8_t *src = (uint8_t*)heap_alloc(sz);
     uint8_t *dst = (uint8_t*)heap_alloc(sz);
@@ -781,7 +781,7 @@ static void bench_all(void){
 
     uint64_t qwords = sz / 8;
 
-    /* === 1. rep stosq === */
+    /* === 1. rep stosq：写入 === */
     {
         uint64_t t0 = rdtsc();
         uint64_t *d = (uint64_t*)src;
@@ -794,13 +794,13 @@ static void bench_all(void){
         );
         uint64_t t1 = rdtsc();
         uint64_t cyc = t1 - t0;
-        /* 2.5 GHz256 MB / (cyc / 2.5e9) = MB/s */
+        /* 2.5 GHz，256 MB / (cyc / 2.5e9) = MB/s */
         uint64_t mb_per_s = (cyc>0) ? (256ULL * 2500000000ULL) / cyc : 0;
         sputs("  rep stosq  256 MB: ");
         sputu(cyc); sputs(" cycles  ~"); sputu(mb_per_s); sputs(" MB/s\n");
     }
 
-    /* === 2. rep movsq === */
+    /* === 2. rep movsq：复制 === */
     {
         uint64_t t0 = rdtsc();
         uint64_t *s2 = (uint64_t*)src;
@@ -819,7 +819,7 @@ static void bench_all(void){
         sputu(cyc); sputs(" cycles  ~"); sputu(mb_per_s); sputs(" MB/s\n");
     }
 
-    /* === 3.  byte  === */
+    /* === 3. 逐 byte 循环（对比用，慢版） === */
     {
         uint64_t t0 = rdtsc();
         for(uint64_t i = 0; i < sz; i++) dst[i] = (uint8_t)i;
@@ -830,12 +830,12 @@ static void bench_all(void){
         sputu(cyc); sputs(" cycles  ~"); sputu(mb_per_s); sputs(" MB/s\n");
     }
 
-    /* === 4. H  pair 138 cycles === */
+    /* === 4. H 闸速度对比（每 pair 138 cycles） === */
     sputs("\n[bench] === QUANTUM vs MEMORY ===\n");
     {
-        /* 28 qubit H  = 1.34  × 138 cycles */
+        /* 28 qubit H 闸 = 1.34 亿对 × 138 cycles */
         uint64_t cycles_per_pair = 138;
-        uint64_t pairs = (1ULL << 27);   /* 1.34  */
+        uint64_t pairs = (1ULL << 27);   /* 1.34 亿 */
         uint64_t total_cyc = pairs * cycles_per_pair;
         uint64_t sec_25 = total_cyc / 2500000000ULL;
         sputs("  28q H gate full: ");
@@ -847,7 +847,7 @@ static void bench_all(void){
     sputs("[bench] done\n");
 }
 
-/* ============  ============ */
+/* ============ 照片 ============ */
 static void screen_photo(void){
     const uint8_t *src = _binary_static_bin_start;
     for(uint32_t y=0;y<FB_H;y++){
@@ -862,7 +862,7 @@ static void screen_photo(void){
     }
 }
 
-/* ============ Q  ============ */
+/* ============ Q 选单 ============ */
 #define N_OPTS 6
 static const int Q_OPTS[N_OPTS] = { 8, 12, 16, 20, 24, 28 };
 static const char *K_KEYS[N_OPTS] = { "1","2","3","4","5","6" };
@@ -927,7 +927,7 @@ static int screen_Q(void){
     }
 }
 
-/* ============  ============ */
+/* ============ 分配量子记忆体 ============ */
 static int allocate_qubits(int nq){
     uint64_t need = (1ULL << nq) * 8ULL;
     sputs("[alloc] nq="); sputu(nq);
@@ -943,7 +943,7 @@ static int allocate_qubits(int nq){
     return 0;
 }
 
-/* ============  ============ */
+/* ============ 桌面 ============ */
 static void screen_desktop(int nq){
     screen_photo();
     int top = 44;
@@ -983,7 +983,7 @@ static void screen_desktop(int nq){
     sputs("[ui] desktop nq="); sputu(nq); sputs("\n");
 }
 
-/* ============  ============ */
+/* ============ 桌面交互 ============ */
 static void desktop_loop(int nq){
     int dh = 64;
     draw_str(20, FB_H-dh+36, "H=H-GATE  I=INFO  ESC=MENU", 100, 1);
@@ -992,7 +992,7 @@ static void desktop_loop(int nq){
         int c = kbd_pop64();
         if(c < 0){ __asm__ volatile("hlt"); continue; }
 
-        if(c == 27){   /* ESC  */
+        if(c == 27){   /* ESC 回选单 */
             return;
         }
         if(c == 'i' || c == 'I'){
@@ -1023,7 +1023,7 @@ static void desktop_loop(int nq){
         }
         if(c == 'c' || c == 'C'){
             sputs("[desktop] CNOT(0,1) sampled\n");
-            /*  CNOT 1024  */
+            /* 抽样 CNOT：前 1024 对 */
             uint64_t cnt=0;
             uint64_t cb = 1ULL, tb = 2ULL;
             for(uint64_t i = 0; i < g_qdim && cnt < 1024; i++){
@@ -1044,7 +1044,7 @@ static void desktop_loop(int nq){
     }
 }
 
-/* ============  ============ */
+/* ============ 主程序 ============ */
 void kernel_main64(uint64_t mbi){
     serial_init();
     sputs("=== ON1 OS 64-bit BOOT ===\n");
@@ -1053,7 +1053,7 @@ void kernel_main64(uint64_t mbi){
     sputs("[idt] OK\n");
 
 
-
+    /* 内核服务 */
     port_init64();
     g_port_main64 = port_create64("main");
     g_port_ai64   = port_create64("ai");
@@ -1061,7 +1061,7 @@ void kernel_main64(uint64_t mbi){
     ai_init64();
     sputs("[kernel] ports+qram+ai ready\n");
 
-    /* port + qram  */
+    /* port + qram 测试 */
     {
         qmsg64_t m;
         m.sender = 0x42; m.cmd = 0xAA; m.arg0 = 0xBB; m.r0 = 0; m.text[0] = 0;
@@ -1082,9 +1082,9 @@ void kernel_main64(uint64_t mbi){
 
     bell_demo();
 
-    /* ring 3  */
+    /* ring 3 已移除：全部核心态 */
 
-    /* AI  demo dummy 4-qubit  */
+    /* AI 巡逻 demo：用静态缓冲区当 dummy 4-qubit 态 */
     {
         static int32_t dummy_state[32];   /* 16 amp × 2 (re/im) */
         for(int i=0;i<32;i++) dummy_state[i]=0;
@@ -1128,10 +1128,10 @@ void kernel_main64(uint64_t mbi){
     }
     sputs(" MB\n");
 
-    /* === benchmark heap  === */
-    /* bench_all();  */
+    /* === benchmark（在 heap 之后） === */
+    /* bench_all(); 跳过 */
 
-    /* === SMP  === */
+    /* === SMP 启动 === */
     sputs("[smp] starting APs...\n");
     smp_init();
 
@@ -1141,15 +1141,15 @@ void kernel_main64(uint64_t mbi){
     sputu(smp_cpu_count());
     sputs("\n");
 
-    /* ===  28 qubit H  === */
+    /* === 全核 28 qubit H 闸 === */
     int32_t *saved_qs = g_qstate;
     /* demo disabled */
 
     bench_smp(28);
 
-    /*  28 qubit H  */
+    /* 完整 28 qubit H 闸 */
     sputs("[bench] === 28 QUBIT FULL H GATE ===\n");
-    /* bench_h_full(28); -- PF */
+    /* bench_h_full(28); -- PF待修 */
 
     for(;;){
         int nq = screen_Q();
@@ -1157,7 +1157,7 @@ void kernel_main64(uint64_t mbi){
 
         int rc = allocate_qubits(nq);
         if(rc != 0){
-
+            /* 失败：显示错误，回车回选单 */
             fill(0);
             draw_str(FB_W/2-190, FB_H/2-35, "NOT ENOUGH MEMORY", 255, 3);
             draw_str(FB_W/2-180, FB_H/2+10, "PRESS ENTER TO RETURN", 180, 2);

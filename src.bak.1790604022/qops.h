@@ -3,26 +3,26 @@
 #define QOPS_H
 #include <stdint.h>
 
-/*  kernel64.c  qft64/grover64/qec64  */
+/* 量子門（在 kernel64.c 定義，供 qft64/grover64/qec64 呼叫） */
 void q_apply_h(int q);
 void q_apply_x(int q);
 void q_apply_cnot(int c, int t);
 void q_apply_toffoli(int c1, int c2, int t);
 
-/* noise64/qft64/...  */
+/* 全域量子態指標（noise64/qft64/... 共用） */
 extern int32_t *g_qstate;
 
 #endif
 
-/*  kernel64.c  */
+/* 序列埠輸出（在 kernel64.c 定義） */
 void sputs(const char *s);
 void sputu(uint64_t v);
 void sputc(char c);
 
-/*  kernel64.c  */
+/* 量子態全域（在 kernel64.c 定義） */
 extern int g_nq;
 extern uint64_t g_qdim;
 
-/* Heap kernel64.c */
+/* Heap（在 kernel64.c 定義）*/
 void     *heap_alloc(uint64_t sz);
 uint64_t  heap_free(void);
