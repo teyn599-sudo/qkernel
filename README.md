@@ -1,57 +1,80 @@
 # QKernel
 
-QKernel is a quantum simulation stack written from scratch — with no Python runtime overhead, no CUDA dependence, and no external frameworks. It uses a uniform Q30 fixed-point arithmetic engine across two deployment targets:
+A bare-metal + Linux-kernel quantum state-vector simulator with
+Q30 fixed-point arithmetic.
 
-## 1. Bare-metal microkernel (ON1 OS)
+## Hardware
 
-A 64-bit microkernel booted via GRUB Multiboot2, featuring 4-level identity page tables, hugepage-backed heap, and 16-core SMP via AP trampoline. It executes a 28-qubit H-gate in **134.0 ms**.
+Intel Core i5-14400, 64 GB DDR4, no GPU.
 
-## 2. Linux kernel module (g116_quantum.ko)
+## Performance (28 qubits, 2 GB state vector)
 
-Exposes a character device /dev/g116_quantum with zero-copy ioctl interfaces for standard gates (H/X/Y/Z/S/T, CNOT, Toffoli, QFT, Grover, QEC). Utilizing workqueue parallelism across 16 cores, it runs a 28-qubit H-gate in **122.7 ms**.
+| Operation | Time | Notes |
+|---|---|---|
+| Single H gate | 108 ms | 16 cores |
+| 4 gates, serial | 517 ms | 4 separate ioctls |
+| **4 gates, fused** | **113 ms** | single ioctl, 16 cores |
+| 31-qubit single H | 854 ms | 8 GB state vector |
 
-The design goal is to bring 28-qubit state-vector simulation (2^28 = 268M complex amplitudes, 2 GB int32 storage) directly to consumer desktop hardware without relying on GPU clusters or expensive cloud infrastructure.
+The fused version composes H-X-CNOT-H into a single 4x4 matrix and
+applies it in one pass. Speedup over serial: 4.57x.
 
-## Benefit to the Ecosystem & Benchmark Proof
+Memory bandwidth utilization: 91% of DDR4-3200 dual-channel peak.
 
-High-qubit quantum simulation (28+ qubits) typically requires server clusters or enterprise GPUs. QKernel demonstrates that raw hardware speed can be achieved directly on standard desktop hardware.
+## QAOA MaxCut (4 nodes, 5 edges)
 
-### Test Hardware Setup
-- CPU: Intel Core i5-14400 (10 cores / 16 threads)
-- Motherboard: Gigabyte Z690M DDR4
-- RAM: 64 GB DDR4
-- Virtualization: KVM (No GPU used)
+Optimal = 4.0
 
-### Performance Benchmark (28-Qubit Single-Qubit H-Gate / 2^27 Pair Operations)
-- Linux Kernel Module (/dev/g116_quantum): **122.7 ms per gate**
-- Bare-Metal Microkernel (ON1 OS): **134.0 ms per gate**
+| Layers p | <H_C> | Ratio |
+|---|---|---|
+| 1 | 3.2371 | 80.9% |
+| 2 | 3.5561 | 88.9% |
+| 3 | 3.9870 | 99.7% |
+| 4 | 3.9990 | 100.0% |
+| 5 | 4.0000 | 100.0% |
 
-### Verified Quantum Behaviors (100% Exact Verification)
-- Bell State: |00> and |11> amplitudes = +759250125 (Q30 representation of 1/sqrt(2)); |01> and |10> = exactly 0.
-- GHZ State & Collapse: Exact 3-qubit entanglement; post-measurement collapse verified with 100% precision.
-- Quantum Algorithms: Full verification of QFT uniform superposition, 4-qubit Grover search (target amplitude grows from 6% to 97% in 3 iterations), and 3-qubit bit-flip QEC.
+Method: warm-start (each layer initializes from layer p-1's solution),
+50 random restarts per layer, momentum SGD with learning rate decay.
+
+Without warm start, optimization collapses at p >= 5 (barren plateau).
+
+## VQE
+
+Tested on 2/4/6/8 qubits with H = -sum Z_i + sum X_i X_{i+1}.
+
+| qubits | params | iters | error |
+|---|---|---|---|
+| 2 | 4 | 156 | 2.9e-08 |
+| 4 | 16 | 527 | 4.4e-04 |
+| 6 | 36 | 2924 | 1.6e-03 |
+| 8 | 64 | 1409 | 4.1e-04 |
+
+Under shot noise (1000 shots/eval, fixed budget):
+- SPSA vs SGD: 550x / 195x / 43x faster (2q/4q/6q)
+- SPSA vs coordinate descent: 2.5x / 4x
 
 ## Source
 
-- src/kernel64.c, qft64.c, grover64.c, qec64.c, noise64.c, demo64.c — bare-metal microkernel
-- src/g116_quantum.c — Linux kernel module
-- src/qk_bell.c, qk_bell_ghz.c, qk_measure.c — userspace tests
+- `src/kernel64.c` — bare-metal microkernel (ON1 OS)
+- `src/g116_quantum.c` — Linux kernel module
+- `src/qaoa2.c` — QAOA MaxCut
+- `src/qft64.c`, `grover64.c`, `qec64.c`, `noise64.c`
+- `src/qk_bell.c`, `qk_bell_ghz.c`, `qk_measure.c` — userspace tests
+
+## Build
+
+cd src
+make
+sudo insmod g116_quantum.ko
+sudo chmod 666 /dev/g116_quantum
 
 ## License
 
-QKernel is released under the **GNU General Public License v3.0 (GPLv3)**. See the `LICENSE` file for the full text.
+MIT (bare-metal and userspace code), GPLv2 (Linux kernel module).
 
-## Commercial Licensing
+## Documentation
 
-For commercial use that cannot comply with GPLv3 — for example, proprietary redistribution or embedding in closed-source products — a separate commercial license is available.
-
-Contact: teyn599@gmail.com
-
-## Licensing Note
-
-The repository as a whole is licensed under GPLv3 (see `LICENSE`).
-
-The Linux kernel module (`src/g116_quantum.c`) is additionally available
-under GPLv2 for compatibility with the Linux kernel, which requires
-`MODULE_LICENSE("GPL")` (meaning "GPLv2 or later"). This dual-licensing
-ensures the module loads without tainting the kernel.
+- [BENCHMARK.md](BENCHMARK.md) — raw benchmark output
+- [FUSION.md](FUSION.md) — 4-gate fusion
+- [VQE.md](VQE.md) — VQE basics
+- [QAOA.md](QAOA.md) — QAOA MaxCut results
