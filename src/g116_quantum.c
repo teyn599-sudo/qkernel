@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 static void q_apply_fused_hxcnot(void);
 // ============================================================
 // G116  v2 —
@@ -30,7 +31,7 @@ typedef struct {
     int32_t im;
 } qcplx_t;
 
-static qcplx_t *q_state = NULL;
+static qcplx_t *q_state;
 
 /* ══════ workqueue ══════ */
 #define MAX_WORKERS 16
@@ -43,7 +44,7 @@ struct parallel_work {
     void *user_ctx;
 };
 
-static struct workqueue_struct *g_wq = NULL;
+static struct workqueue_struct *g_wq;
 static struct parallel_work g_works[MAX_WORKERS];
 static atomic_t g_pending = ATOMIC_INIT(0);
 static struct completion g_all_done;
@@ -984,7 +985,8 @@ static long q_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
     }
     case Q_APPLY_FUSED_HXCNOTH:
         q_apply_fused_hxcnot();
-        return 0;
+        ret = 0;
+        break;
     case Q_QFT_RUN: {
         struct qqft_req r;
         if (copy_from_user(&r, (void __user *)arg, sizeof(r))) { ret=-EFAULT; break; }
@@ -1125,16 +1127,20 @@ module_init(g116_quantum_init);
 module_exit(g116_quantum_exit);
 
 MODULE_LICENSE("GPL");
-static void q_apply_fused_hxcnot(void)
+/* 4 门融合：多核版 */
+struct f4_ctx { uint64_t total_blocks; };
+
+static void f4_chunk(void *ctx, int chunk, int n_chunks)
 {
+    (void)ctx;
     const int64_t sq = 759250125LL;
     const int64_t half = 1LL << (QSHIFT - 1);
-    uint64_t base;
-    for (base = 0; base < DIM; base += 4) {
-        if ((base & 255) == 0 && base + 512 < DIM) {
-            __builtin_prefetch(&q_state[base + 256], 1, 3);
-            __builtin_prefetch(&q_state[base + 384], 1, 3);
-        }
+    uint64_t total_blocks = DIM / 4;
+    uint64_t per = total_blocks / (uint64_t)n_chunks;
+    uint64_t start = (uint64_t)chunk * per;
+    uint64_t end = (chunk == n_chunks - 1) ? total_blocks : start + per;
+    for (uint64_t b = start; b < end; b++) {
+        uint64_t base = b * 4;
         int64_t r0 = q_state[base+0].re, i0 = q_state[base+0].im;
         int64_t r1 = q_state[base+1].re, i1 = q_state[base+1].im;
         int64_t r2 = q_state[base+2].re, i2 = q_state[base+2].im;
@@ -1149,3 +1155,10 @@ static void q_apply_fused_hxcnot(void)
         q_state[base+3].im = (int32_t)((sq * (i0 - i2) + half) >> QSHIFT);
     }
 }
+
+static void q_apply_fused_hxcnot(void)
+{
+    struct f4_ctx ctx = { DIM / 4 };
+    run_parallel(f4_chunk, &ctx, g_n_workers);
+}
+
