@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later */
 #include <stdint.h>
 #include "qops.h"
 #define QSHIFT 30
@@ -9,14 +8,14 @@
 extern int32_t *g_qstate;
 extern void q_apply_h(int q);
 
-/* Oracle target  */
+/* Oracle：翻轉 target 態的相位 */
 static void oracle(int nq, uint64_t target){
     int32_t *st = g_qstate;
     st[target*2]   = -st[target*2];
     st[target*2+1] = -st[target*2+1];
 }
 
-/* Diffuser*/
+/* Diffuser：關於平均值翻轉（反射）*/
 static void diffuser(int nq){
     int32_t *st = g_qstate;
     uint64_t dim = 1ULL << nq;
@@ -30,7 +29,7 @@ static void diffuser(int nq){
     }
 }
 
-/* Grovernq qubit target iter  */
+/* Grover：nq qubit，目標 target，跑 iter 次 */
 void grover_run(int nq, uint64_t target, int iter){
     int32_t *st = g_qstate;
     uint64_t dim = 1ULL << nq;

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later */
 #include <stdint.h>
 #include "qops.h"
 #define QSHIFT 30
